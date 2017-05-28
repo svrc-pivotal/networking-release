@@ -1,0 +1,111 @@
+#!/bin/bash
+
+set -e # exit immediately if a simple command exits with a non-zero status
+mkdir -p /var/vcap/sys/{log,run}/multi_nics
+exec 1>> /var/vcap/sys/log/multi_nics/multi_nics.out.log
+exec 2>> /var/vcap/sys/log/multi_nics/multi_nics.err.log
+
+list_ip_forwarding() {
+    ip_forwarding=$(cat /proc/sys/net/ipv4/ip_forward)
+    echo "*** $(date) Current ip forwarding status: ${ip_forwarding}"
+}
+
+update_ip_forwarding() {
+    list_ip_forwarding
+
+    echo "*** $(date) Updating ip forwarding with: ${1}"
+    echo ${1} > /proc/sys/net/ipv4/ip_forward
+
+    list_ip_forwarding
+}
+
+list_routes() {
+    echo "*** $(date) Current routes:"
+    ip route show table all
+}
+
+list_rules() {
+    echo "*** $(date) Current rules:"
+    ip rule list
+}
+
+
+update_routes() {
+    list_routes
+
+    echo "*** $(date) ${1} route:"
+    set +e
+    ip route ${1} default via ${3} dev ${2} tab ${4}
+    set -e
+
+    list_routes
+}
+
+update_rules() {
+    list_rules
+
+    echo "*** $(date) ${1} rules:"
+    set +e
+    ip=$(ip -o addr show ${2} | awk '{print $4}' | sed 's|\/\(.*\)||g')
+    ip rule ${1} from ${ip} tab ${3}
+    set -e
+
+    list_rules
+}
+
+
+case $1 in
+
+    start)
+
+        echo "****** $(date) ${0} start"
+
+        # Enable IP forwarding
+        update_ip_forwarding 1
+
+        <% p('networking.multi_nics', []).each_with_index do |route, index|
+          tab = index + 1
+        %>
+        # Add route
+        update_routes add "<%= route['name'] %>" "<%= route['gateway'] %>" <%= tab %>
+        update_rules add "<%= route['name'] %>" <%= tab %>
+        <% end %>
+
+        # Create check file
+        touch /var/vcap/sys/run/multi_nics/multi_nics.check
+        ;;
+
+    stop)
+        echo "****** $(date) ${0} stop"
+
+        <% p('networking.multi_nics', []).each_with_index do |route, index|
+          tab = index + 1
+        %>
+
+        # Delete route
+        update_routes del "<%= route['name'] %>" "<%= route['gateway'] %>" <%= tab %>
+        update_rules del "<%= route['name'] %>" <%= tab %>
+        <% end %>
+
+        # Disable IP forwarding
+        update_ip_forwarding 0
+
+        # Remove check file
+        rm /var/vcap/sys/run/multi_nics/multi_nics.check
+        ;;
+
+    status)
+        echo "****** $(date) ${0} status"
+
+        # List routes
+        list_routes
+        list_rules
+        ;;
+
+    *)
+        echo "Usage: $0 {start|stop|status}"
+        exit 1
+        ;;
+
+esac
+exit 0

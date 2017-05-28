@@ -1,0 +1,14 @@
+---
+name: multi_nics
+
+packages: []
+
+templates:
+  bin/routes_ctl.erb: bin/routes_ctl
+
+properties:
+  networking.multi_nics:
+    description: "List of either network route policy to be added to make sure each ethernet has a route map"
+    example:
+      - name: eth0 # The nic needs to build a policy routing table. So eth0 outbound will use eth0 and eth1 outbound will use eth1
+      - gateway: 10.0.0.1 # The gateway for the routes

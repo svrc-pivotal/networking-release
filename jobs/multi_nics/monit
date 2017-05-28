@@ -1,0 +1,5 @@
+check file multi_nics
+  with path /var/vcap/sys/run/multi_nics/multi_nics.check
+  start program "/var/vcap/jobs/multi_nics/bin/routes_ctl start"
+  stop program "/var/vcap/jobs/multi_nics/bin/routes_ctl stop"
+  group vcap
