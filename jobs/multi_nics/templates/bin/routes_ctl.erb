@@ -19,6 +19,16 @@ update_ip_forwarding() {
     list_ip_forwarding
 }
 
+update_arp_ignore() {
+    echo "*** $(date) Updating arp ignore: ${1}"
+    echo ${1} > /proc/sys/net/ipv4/conf/all/arp_ignore
+}
+
+update_arp_announce() {
+    echo "*** $(date) Updating arp announce: ${1}"
+    echo ${1} > /proc/sys/net/ipv4/conf/all/arp_announce
+}
+
 list_routes() {
     echo "*** $(date) Current routes:"
     ip route show table all
@@ -35,7 +45,8 @@ update_routes() {
 
     echo "*** $(date) ${1} route:"
     set +e
-    ip route ${1} default via ${3} dev ${2} tab ${4}
+    nic=$(ip -o addr list | grep ${2} | awk '{print $2}')
+    ip route ${1} ${5} via ${3} dev ${nic} tab ${4}
     set -e
 
     list_routes
@@ -46,11 +57,17 @@ update_rules() {
 
     echo "*** $(date) ${1} rules:"
     set +e
-    ip=$(ip -o addr show ${2} | awk '{print $4}' | sed 's|\/\(.*\)||g')
-    ip rule ${1} from ${ip} tab ${3}
+    ip rule ${1} from ${2} tab ${3}
     set -e
 
     list_rules
+}
+
+snat_rules() {
+  echo "*** $(date) ${1} "
+  set +e
+  iptables -t nat ${1} POSTROUTING -j SNAT --source $2 --to $3
+  set -e
 }
 
 
@@ -62,13 +79,26 @@ case $1 in
 
         # Enable IP forwarding
         update_ip_forwarding 1
+        update_arp_ignore 1
+        update_arp_announce 2
 
-        <% p('networking.multi_nics', []).each_with_index do |route, index|
+        <% p('networking.public_multi_nics', []).each_with_index do |route, index|
           tab = index + 1
         %>
-        # Add route
-        update_routes add "<%= route['name'] %>" "<%= route['gateway'] %>" <%= tab %>
-        update_rules add "<%= route['name'] %>" <%= tab %>
+        # Add route/rules to make sure the particular nic IP would route through its own ip
+        # instead of the default gateway
+        update_routes add "<%= route['ip'] %>" "<%= route['gateway'] %>" <%= tab %> default
+        update_rules add "<%= route['ip'] %>" <%= tab %>
+        <% p('networking.snats', []).each do |snat| %>
+        <% if snat['toip'] == route['ip'] %>
+          #Add snat rule for out bound traffic
+          snat_rules '-A' "<%= snat['cidr'] %>" "<%= snat['toip'] %>"
+          #Add Rule to make sure the SNAT route through correct eithernet nic
+          update_rules add "<%= snat['cidr'] %>" <%= tab %>
+          #Add Route to make sure the routes of the private network go through local gateway
+          update_routes add "<%= snat['localgateway'] %>" "<%= snat['localgateway'] %>" <%= tab %> "<%= snat['cidr'] %>"
+        <% end %>
+        <% end %>
         <% end %>
 
         # Create check file
@@ -78,17 +108,26 @@ case $1 in
     stop)
         echo "****** $(date) ${0} stop"
 
-        <% p('networking.multi_nics', []).each_with_index do |route, index|
+        <% p('networking.public_multi_nics', []).each_with_index do |route, index|
           tab = index + 1
         %>
 
         # Delete route
-        update_routes del "<%= route['name'] %>" "<%= route['gateway'] %>" <%= tab %>
-        update_rules del "<%= route['name'] %>" <%= tab %>
+        update_routes del "<%= route['ip'] %>" "<%= route['gateway'] %>" <%= tab %> default
+        update_rules del "<%= route['ip'] %>" <%= tab %>
+        <% p('networking.snats', []).each do |snat| %>
+        <% if snat['toip'] == route['ip'] %>
+          snat_rules '-D' "<%= snat['cidr'] %>" "<%= snat['toip'] %>"
+          update_rules del "<%= snat['cidr'] %>" <%= tab %>
+          update_routes del "<%= snat['localgateway'] %>" "<%= snat['localgateway'] %>" <%= tab %> "<%= snat['cidr'] %>"
+        <% end %>
+        <% end %>
         <% end %>
 
         # Disable IP forwarding
         update_ip_forwarding 0
+        update_arp_ignore 0
+        update_arp_announce 0
 
         # Remove check file
         rm /var/vcap/sys/run/multi_nics/multi_nics.check

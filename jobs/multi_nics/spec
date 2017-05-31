@@ -7,8 +7,14 @@ templates:
   bin/routes_ctl.erb: bin/routes_ctl
 
 properties:
-  networking.multi_nics:
+  networking.public_multi_nics:
     description: "List of either network route policy to be added to make sure each ethernet has a route map"
     example:
-      - name: eth0 # The nic needs to build a policy routing table. So eth0 outbound will use eth0 and eth1 outbound will use eth1
+      - ip: 10.193.53.220 # IP attached to a nic to be configured outbound through its own nic
       - gateway: 10.0.0.1 # The gateway for the routes
+  networking.snats:
+    description: "route subnets through a public IP"
+    example:
+      - cidr: 192.168.0.0/24 # CIDR of source IPs
+      - localgateway: 192.168.0.1
+      - toip: 10.193.53.220 # The SNAT to IPs, must be one of the public IPs
