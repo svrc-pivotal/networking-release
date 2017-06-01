@@ -144,6 +144,12 @@ case $1 in
             <% mark = mark + 1 %>
           <% end %>
         <% end %>
+        <% p('networking.lbs', []).each do |lb| %>
+          <% if lb['lbip'] == route['ip'] %>
+            #Add Route to the internal IP address space can route back
+            update_routes add "<%= lb['localgateway'] %>" "<%= lb['localgateway'] %>" <%= tab %> "<%= lb['cidr'] %>"
+          <% end %>
+        <% end %>
         <% end %>
 
         # Create check file
@@ -177,6 +183,11 @@ case $1 in
             update_rules_mark del "<%= mark %>" <%= tab %>
             update_nic_routes del "<%= dnat['internal_ip'] %>" "<%= dnat['internal_gateway'] %>" <%= tab %>
             <%= mark = mark + 1 %>
+          <% end %>
+        <% end %>
+        <% p('networking.lbs', []).each do |lb| %>
+          <% if lb['lbip'] == route['ip'] %>
+            update_routes del "<%= lb['localgateway'] %>" "<%= lb['localgateway'] %>" <%= tab %> "<%= lb['cidr'] %>"
           <% end %>
         <% end %>
         <% end %>

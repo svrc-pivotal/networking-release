@@ -26,3 +26,9 @@ properties:
         internal_ip: 10.10.0.34
         internal_port: 8080
         internal_gateway: 10.10.0.1
+  networking.lbs:
+    description: "Set up rules for LB route table"
+    example:
+      - cidr: 192.168.1.0/24
+        localgateway: 192.168.1.1
+        lbip: 10.193.53.120
