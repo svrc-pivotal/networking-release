@@ -29,6 +29,12 @@ update_arp_announce() {
     echo ${1} > /proc/sys/net/ipv4/conf/all/arp_announce
 }
 
+update_rp_filter() {
+    echo "*** $(date) Updating rp filter ${1} for: ${2}"
+    nic=$(ip -o addr list | grep ${2} | awk '{print $2}')
+    echo ${1} > /proc/sys/net/ipv4/conf/${nic}/rp_filter
+}
+
 list_routes() {
     echo "*** $(date) Current routes:"
     ip route show table all
@@ -41,33 +47,58 @@ list_rules() {
 
 
 update_routes() {
-    list_routes
 
-    echo "*** $(date) ${1} route:"
+    echo "*** $(date) ${1} route: via ${3} through tab ${4}"
     set +e
     nic=$(ip -o addr list | grep ${2} | awk '{print $2}')
     ip route ${1} ${5} via ${3} dev ${nic} tab ${4}
     set -e
 
-    list_routes
 }
 
-update_rules() {
-    list_rules
+update_nic_routes() {
 
-    echo "*** $(date) ${1} rules:"
+    echo "*** $(date) ${1} route: via ${3} through tab ${4}"
+    set +e
+    nic=$(ip -o addr list | grep ${3} | awk '{print $2}')
+    ip route ${1} ${2} dev ${nic} tab ${4}
+    set -e
+
+}
+
+
+update_rules() {
+    echo "*** $(date) ${1} rules: from ${2} look up tab ${3}"
     set +e
     ip rule ${1} from ${2} tab ${3}
     set -e
-
-    list_rules
 }
 
+update_rules_mark() {
+    echo "*** $(date) ${1} rules firemark: ${2} to table ${3}"
+    set +e
+    ip rule ${1} fwmark ${2} tab ${3}
+    set -e
+}
+
+
 snat_rules() {
-  echo "*** $(date) ${1} "
+  echo "*** $(date) ${1} SNAT RULES from $2 to $3"
   set +e
   iptables -t nat ${1} POSTROUTING -j SNAT --source $2 --to $3
   set -e
+}
+
+dnat_rules() {
+  echo "*** $(date) ${1} DNAT from ${2}:${3} to ${4}:{5}"
+  set +e
+  iptables -t nat ${1} PREROUTING -p tcp -d ${2} --dport ${3} -j DNAT --to-destination ${4}:${5}
+  set -e
+}
+
+mangle_dnat(){
+  echo "*** $(date) ${1} SET MARK to ${4} with ${2}:${3}"
+  iptables -t mangle ${1} PREROUTING -p tcp -d ${2} --dport ${3} -j MARK --set-mark ${4}
 }
 
 
@@ -84,20 +115,34 @@ case $1 in
 
         <% p('networking.public_multi_nics', []).each_with_index do |route, index|
           tab = index + 1
+          mark = 1
         %>
         # Add route/rules to make sure the particular nic IP would route through its own ip
         # instead of the default gateway
         update_routes add "<%= route['ip'] %>" "<%= route['gateway'] %>" <%= tab %> default
         update_rules add "<%= route['ip'] %>" <%= tab %>
         <% p('networking.snats', []).each do |snat| %>
-        <% if snat['toip'] == route['ip'] %>
-          #Add snat rule for out bound traffic
-          snat_rules '-A' "<%= snat['cidr'] %>" "<%= snat['toip'] %>"
-          #Add Rule to make sure the SNAT route through correct eithernet nic
-          update_rules add "<%= snat['cidr'] %>" <%= tab %>
-          #Add Route to make sure the routes of the private network go through local gateway
-          update_routes add "<%= snat['localgateway'] %>" "<%= snat['localgateway'] %>" <%= tab %> "<%= snat['cidr'] %>"
+          <% if snat['toip'] == route['ip'] %>
+            #Add snat rule for out bound traffic
+            snat_rules '-A' "<%= snat['cidr'] %>" "<%= snat['toip'] %>"
+            #Add Rule to make sure the SNAT route through correct eithernet nic
+            update_rules add "<%= snat['cidr'] %>" <%= tab %>
+            #Add Route to make sure the routes of the private network go through local gateway
+            update_routes add "<%= snat['localgateway'] %>" "<%= snat['localgateway'] %>" <%= tab %> "<%= snat['cidr'] %>"
+          <% end %>
         <% end %>
+        <% p('networking.dnats', []).each do |dnat| %>
+          <% if dnat['external_ip'] == route['ip'] %>
+            # RP FILTER has to be set to all to enable one of the interfaces
+            echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
+            #Add dnat rule for inbound traffic
+            dnat_rules -A "<%= dnat['external_ip'] %>" "<%= dnat['external_port'] %>" "<%= dnat['internal_ip'] %>" "<%= dnat['internal_port'] %>"
+            mangle_dnat -A "<%= dnat['external_ip'] %>" "<%= dnat['external_port'] %>" "<%= mark %>"
+            update_rp_filter 0 "<%= dnat['external_ip'] %>"
+            update_rules_mark add "<%= mark %>" <%= tab %>
+            update_nic_routes add "<%= dnat['internal_ip'] %>" "<%= dnat['internal_gateway'] %>" <%= tab %>
+            <% mark = mark + 1 %>
+          <% end %>
         <% end %>
         <% end %>
 
@@ -110,17 +155,29 @@ case $1 in
 
         <% p('networking.public_multi_nics', []).each_with_index do |route, index|
           tab = index + 1
+          mark = 1
         %>
 
         # Delete route
         update_routes del "<%= route['ip'] %>" "<%= route['gateway'] %>" <%= tab %> default
         update_rules del "<%= route['ip'] %>" <%= tab %>
         <% p('networking.snats', []).each do |snat| %>
-        <% if snat['toip'] == route['ip'] %>
-          snat_rules '-D' "<%= snat['cidr'] %>" "<%= snat['toip'] %>"
-          update_rules del "<%= snat['cidr'] %>" <%= tab %>
-          update_routes del "<%= snat['localgateway'] %>" "<%= snat['localgateway'] %>" <%= tab %> "<%= snat['cidr'] %>"
+          <% if snat['toip'] == route['ip'] %>
+            snat_rules '-D' "<%= snat['cidr'] %>" "<%= snat['toip'] %>"
+            update_rules del "<%= snat['cidr'] %>" <%= tab %>
+            update_routes del "<%= snat['localgateway'] %>" "<%= snat['localgateway'] %>" <%= tab %> "<%= snat['cidr'] %>"
+          <% end %>
         <% end %>
+        <% p('networking.dnats', []).each do |dnat| %>
+          <% if dnat['external_ip'] == route['ip'] %>
+            echo 1 > /proc/sys/net/ipv4/conf/all/rp_filter
+            dnat_rules -D "<%= dnat['external_ip'] %>" "<%= dnat['external_port'] %>" "<%= dnat['internal_ip'] %>" "<%= dnat['internal_port'] %>"
+            mangle_dnat -D "<%= dnat['external_ip'] %>" "<%= dnat['external_port'] %>" "<%= mark %>"
+            update_rp_filter 1 "<%= dnat['external_ip'] %>"
+            update_rules_mark del "<%= mark %>" <%= tab %>
+            update_nic_routes del "<%= dnat['internal_ip'] %>" "<%= dnat['internal_gateway'] %>" <%= tab %>
+            <%= mark = mark + 1 %>
+          <% end %>
         <% end %>
         <% end %>
 

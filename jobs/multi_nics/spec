@@ -18,3 +18,11 @@ properties:
       - cidr: 192.168.0.0/24 # CIDR of source IPs
       - localgateway: 192.168.0.1
       - toip: 10.193.53.220 # The SNAT to IPs, must be one of the public IPs
+  networking.dnats:
+    description: "route subnets through a public IP"
+    example:
+      - external_port: 80
+        external_ip: 10.0.0.5
+        internal_ip: 10.10.0.34
+        internal_port: 8080
+        internal_gateway: 10.10.0.1
