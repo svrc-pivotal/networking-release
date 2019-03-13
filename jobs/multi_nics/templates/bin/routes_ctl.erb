@@ -53,7 +53,7 @@ update_arp_announce() {
 
 update_rp_filter() {
     echo "*** $(date) Updating rp filter ${1} for: ${2}"
-    nic=$(ip -o addr list | grep ${2} | awk '{print $2}')
+    nic=$(ip -o addr list | grep ${2}\/ | awk '{print $2}')
     echo ${1} > /proc/sys/net/ipv4/conf/${nic}/rp_filter
 }
 
@@ -72,7 +72,7 @@ update_routes() {
 
     echo "*** $(date) ${1} route: via ${3} through tab ${4}"
     set +e
-    nic=$(ip -o addr list | grep ${2} | awk '{print $2}')
+    nic=$(ip -o addr list | grep ${2}\/ | awk '{print $2}')
     ip route ${1} ${5} via ${3} dev ${nic} tab ${4}
     set -e
 
@@ -82,7 +82,7 @@ update_nic_routes() {
 
     echo "*** $(date) ${1} route: via ${3} through tab ${4}"
     set +e
-    nic=$(ip -o addr list | grep ${3} | awk '{print $2}')
+    nic=$(ip -o addr list | grep ${3}\/ | awk '{print $2}')
     ip route ${1} ${2} dev ${nic} tab ${4}
     set -e
 
