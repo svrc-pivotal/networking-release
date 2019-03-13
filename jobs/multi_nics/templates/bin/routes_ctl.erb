@@ -11,7 +11,7 @@ LOCKFD=99
 # PRIVATE
 _lock()             { flock -$1 $LOCKFD; }
 _no_more_locking()  { _lock u; _lock xn && rm -f $LOCKFILE; }
-_prepare_locking()  { eval "exec $LOCKFD>\"$LOCKFILE\"";  EXIT; }
+_prepare_locking()  { eval "exec $LOCKFD>\"$LOCKFILE\"";  }
 
 # ON START
 _prepare_locking
