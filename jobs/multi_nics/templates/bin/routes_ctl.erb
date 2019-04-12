@@ -135,8 +135,10 @@ case $1 in
         update_arp_ignore 1
         update_arp_announce 2
 
+<%
           tab = 1
           mark = 1
+%>
         <% p('networking.snats', []).each do |snat| %>
             #Add snat rule for out bound traffic
             snat_rules '-A' "<%= snat['cidr'] %>" "<%= snat['toip'] %>"
@@ -167,10 +169,10 @@ case $1 in
 
     stop)
         echo "****** $(date) ${0} stop"
-
+<%
           tab =  1
           mark = 1
-
+%>
         # Delete route
         <% p('networking.snats', []).each do |snat| %>
             snat_rules '-D' "<%= snat['cidr'] %>" "<%= snat['toip'] %>"
