@@ -53,7 +53,7 @@ update_arp_announce() {
 
 update_rp_filter() {
     echo "*** $(date) Updating rp filter ${1} for: ${2}"
-    nic=$(ip -o addr list | grep ${2}\/ | awk '{print $2}')
+    nic=$2
     echo ${1} > /proc/sys/net/ipv4/conf/${nic}/rp_filter
 }
 
@@ -152,7 +152,7 @@ case $1 in
             #Add dnat rule for inbound traffic
             dnat_rules -A "<%= dnat['external_ip'] %>" "<%= dnat['external_port'] %>" "<%= dnat['internal_ip'] %>" "<%= dnat['internal_port'] %>"
             mangle_dnat -A "<%= dnat['external_ip'] %>" "<%= dnat['external_port'] %>" "<%= mark %>"
-            update_rp_filter 0 "<%= dnat['external_ip'] %>"
+            update_rp_filter 0 "<%= dnat['interface'] %>"
             update_rules_mark add "<%= mark %>" <%= tab %>
             <% mark = mark + 1 %>
         <% end %>
@@ -174,13 +174,12 @@ case $1 in
         <% p('networking.snats', []).each do |snat| %>
             snat_rules '-D' "<%= snat['cidr'] %>" "<%= snat['toip'] %>"
             update_rules del "<%= snat['cidr'] %>" <%= tab %>
-            update_routes del "<%= snat['localgateway'] %>" "<%= snat['localgateway'] %>" <%= tab %> "<%= snat['cidr'] %>"
         <% end %>
         <% p('networking.dnats', []).each do |dnat| %>
             echo 1 > /proc/sys/net/ipv4/conf/all/rp_filter
             dnat_rules -D "<%= dnat['external_ip'] %>" "<%= dnat['external_port'] %>" "<%= dnat['internal_ip'] %>" "<%= dnat['internal_port'] %>"
             mangle_dnat -D "<%= dnat['external_ip'] %>" "<%= dnat['external_port'] %>" "<%= mark %>"
-            update_rp_filter 1 "<%= dnat['external_ip'] %>"
+            update_rp_filter 1 "<%= dnat['interface'] %>"
             update_rules_mark del "<%= mark %>" <%= tab %>
             <%= mark = mark + 1 %>
         <% end %>
